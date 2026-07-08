@@ -358,8 +358,31 @@ function hexRGB(h: string): [number, number, number] {
   return [parseInt(s.slice(0, 2), 16), parseInt(s.slice(2, 4), 16), parseInt(s.slice(4, 6), 16)];
 }
 
+// Capture the live dashboard DOM (exact layout + charts) and save it as a PDF.
+export async function exportReplicaPDF(node: HTMLElement, fileBase: string, bg: string): Promise<void> {
+  const [{ toPng }, { jsPDF }] = await Promise.all([import("html-to-image"), import("jspdf")]);
+  const dataUrl = await toPng(node, {
+    pixelRatio: 2,
+    backgroundColor: bg,
+    cacheBust: true,
+    filter: (el) => {
+      const c = (el as HTMLElement).classList;
+      return !c || (!c.contains("export-btn") && !c.contains("modal-overlay"));
+    },
+  });
+  const img = new Image();
+  await new Promise<void>((res, rej) => { img.onload = () => res(); img.onerror = () => rej(new Error("img")); img.src = dataUrl; });
+  const w = img.width, h = img.height;
+  const pdf = new jsPDF({ unit: "px", format: [w, h], orientation: w > h ? "landscape" : "portrait", compress: true });
+  pdf.addImage(dataUrl, "PNG", 0, 0, w, h);
+  pdf.save(`${fileBase}.pdf`);
+}
+
+export interface ChartShot { title: string; img: string; w: number; h: number }
+
 export async function exportPDF(
-  persona: PersonaKey, entityName: string, years: string[], impactYear: string, p: Profile, accentHex: string
+  persona: PersonaKey, entityName: string, years: string[], impactYear: string, p: Profile, accentHex: string,
+  charts: ChartShot[] = []
 ): Promise<void> {
   const [{ jsPDF }, autoTableMod] = await Promise.all([import("jspdf"), import("jspdf-autotable")]);
   const autoTable = autoTableMod.default;
@@ -424,6 +447,23 @@ export async function exportPDF(
   section("Collaboration network — countries", ["Country", "Publications"], nv(p.network.nodes));
   section("Collaboration network — partnerships", ["Country A", "Country B", "Co-published"],
     p.network.edges.map((e) => [e.source, e.target, e.value]));
+
+  // ---- chart images ----
+  if (charts.length) {
+    doc.addPage(); y = M;
+    doc.setFont("helvetica", "bold"); doc.setFontSize(14); doc.setTextColor(accent[0], accent[1], accent[2]);
+    doc.text("Charts", M, y); y += 18;
+    const maxW = W - M * 2;
+    for (const c of charts) {
+      const drawW = maxW;
+      const drawH = Math.min(maxW * (c.h / c.w), H - M * 2 - 24);
+      if (y + drawH + 22 > H - M) { doc.addPage(); y = M; }
+      doc.setFont("helvetica", "bold"); doc.setFontSize(11); doc.setTextColor(30, 30, 40);
+      doc.text(c.title, M, y); y += 8;
+      try { doc.addImage(c.img, "PNG", M, y, drawW, drawH); } catch { /* skip unreadable */ }
+      y += drawH + 22;
+    }
+  }
 
   // footer page numbers
   const pages = doc.getNumberOfPages();

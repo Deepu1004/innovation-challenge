@@ -1130,3 +1130,18 @@ body::before {
 .modal-title { margin: 14px 0 8px; font-size: 19px; font-weight: 780; letter-spacing: -.01em; }
 .modal-body { margin: 0; font-size: 15px; line-height: 1.6; color: var(--ink); }
 .modal-foot { margin-top: 16px; padding-top: 12px; border-top: 1px solid var(--border); font-size: 11.5px; color: var(--muted); }
+/* ===================== print / export-to-PDF (exact replica) ===================== */
+@media print {
+  @page { size: A3 portrait; margin: 10mm; }
+  * { -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; }
+  body::before { display: none !important; }
+  .topbar { position: static !important; backdrop-filter: none; }
+  /* hide interactive-only controls in the printed copy */
+  .icon-btn, .export-btn, .ai-btn, .modal-overlay, .select-btn > span[aria-hidden] { display: none !important; }
+  .card, .kpi, .ai { box-shadow: none !important; break-inside: avoid; page-break-inside: avoid; backdrop-filter: none; }
+  .grid { break-inside: avoid; page-break-inside: avoid; }
+  .content { max-width: none !important; padding-top: 8px; }
+  .app { min-height: 0; }
+  /* keep the current entity + filter selections visible as static chips */
+  .select-btn, .yearsel { box-shadow: none; }
+}

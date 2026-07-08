@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import * as echarts from "echarts";
 import {
-  loadIndex, loadEntity, mergeProfiles, summaryFor, sectionSummary, exportPDF, pctOA, countriesReached, fmt,
+  loadIndex, loadEntity, mergeProfiles, summaryFor, sectionSummary, exportReplicaPDF, pctOA, countriesReached, fmt,
   paletteFor, CHANNEL_COLORS, MAP_METRICS,
   type PortalIndex, type PersonaKey, type Cube, type Profile, type SumCtx,
 } from "./lib";
@@ -50,6 +50,7 @@ export default function App() {
   const [mapMetric, setMapMetric] = useState<string>("all");
   const [drill, setDrill] = useState<string | null>(null);
   const [aiOpen, setAiOpen] = useState<{ key: string; title: string } | null>(null);
+  const [exporting, setExporting] = useState(false);
 
   useEffect(() => {
     loadIndex().then((d) => { setIdx(d); setPubYears(d.meta.pubYears); }).catch((e) => console.error(e));
@@ -99,7 +100,21 @@ export default function App() {
 
   const sumCtx: SumCtx = { entityName, years: activeYears, impactYear, mapMetric, persona };
   const openAi = (key: string, title: string) => setAiOpen({ key, title });
-  const doExport = () => { if (prof) void exportPDF(persona, entityName, activeYears, impactYear, prof, accent); };
+  const doExport = async () => {
+    const node = document.querySelector<HTMLElement>(".app");
+    if (!node) return;
+    setAiOpen(null); setDrill(null); setExporting(true);
+    try {
+      await new Promise((r) => setTimeout(r, 120)); // let modal/drill close first
+      const bg = getComputedStyle(document.body).backgroundColor;
+      const safe = entityName.replace(/[^a-z0-9]+/gi, "_").slice(0, 40);
+      await exportReplicaPDF(node, `PIX_${persona}_${safe}_pub-${activeYears.join("-")}_impact-${impactYear}`, bg);
+    } catch (e) {
+      console.error("export failed", e);
+    } finally {
+      setExporting(false);
+    }
+  };
 
   const pubEmpty = (
     <div className="empty"><div className="empty-ico">◔</div>
@@ -143,8 +158,8 @@ export default function App() {
           <Dropdown label="Impact year" value={impactYear} options={yearOpts} onChange={setImpactYear} width={160} />
           <EntitySelect label={cfg.entityLabel} current={entity} entities={cfg.entities} onSelect={setEntity}
             allLabel={persona === "consortia" ? "All (Taylor & Francis)" : "All journals (Taylor & Francis)"} />
-          <button className="export-btn" onClick={doExport} disabled={!prof} title={`Export ${cfg.label} report (PDF)`}>
-            <span aria-hidden>⤓</span> Export PDF
+          <button className="export-btn" onClick={doExport} disabled={!prof || exporting} title="Download an exact PDF of this dashboard">
+            <span aria-hidden>⤓</span> {exporting ? "Exporting…" : "Export PDF"}
           </button>
         </div>
       </div>
