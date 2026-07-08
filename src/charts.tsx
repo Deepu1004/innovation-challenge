@@ -2,7 +2,9 @@ import ReactECharts from "echarts-for-react";
 import type { EChartsOption } from "echarts";
 import { fmt, fmtFull, type NV, type Network, type Palette } from "./lib";
 
-export function EChart({ option, height = 260 }: { option: EChartsOption; height?: number }) {
+export function EChart({ option, height = 260, onEvents }: {
+  option: EChartsOption; height?: number; onEvents?: Record<string, (params: any) => void>;
+}) {
   return (
     <ReactECharts
       option={option}
@@ -10,6 +12,7 @@ export function EChart({ option, height = 260 }: { option: EChartsOption; height
       notMerge
       lazyUpdate
       opts={{ renderer: "canvas" }}
+      onEvents={onEvents}
       className="echart"
     />
   );
