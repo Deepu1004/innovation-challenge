@@ -1,9 +1,9 @@
 import { useEffect, useMemo, useState } from "react";
 import * as echarts from "echarts";
 import {
-  loadIndex, loadEntity, mergeProfiles, summaryFor, pctOA, countriesReached, fmt,
+  loadIndex, loadEntity, mergeProfiles, summaryFor, sectionSummary, buildExportCSV, pctOA, countriesReached, fmt,
   paletteFor, CHANNEL_COLORS, MAP_METRICS,
-  type PortalIndex, type PersonaKey, type Cube, type Profile,
+  type PortalIndex, type PersonaKey, type Cube, type Profile, type SumCtx,
 } from "./lib";
 import { useTheme } from "./theme";
 import { Card, Kpi, RankedList, EntitySelect, Dropdown, MultiDropdown } from "./components";
@@ -47,7 +47,7 @@ export default function App() {
   const [loading, setLoading] = useState(false);
   const [pubYears, setPubYears] = useState<number[]>([]);
   const [impactYear, setImpactYear] = useState<string>("all");
-  const [mapMetric, setMapMetric] = useState<string>("mentions");
+  const [mapMetric, setMapMetric] = useState<string>("policies");
   const [drill, setDrill] = useState<string | null>(null);
 
   useEffect(() => {
@@ -92,6 +92,26 @@ export default function App() {
   const yearOpts = [{ v: "all", label: "All years" }, ...idx.meta.impactYears.map((y) => ({ v: String(y), label: String(y) }))];
   const drillItems = drill && prof ? prof.country_detail[drill] ?? [] : [];
 
+  // A mention cannot occur before its paper is published → an impact year earlier
+  // than every selected publication year is an impossible combination (show nothing).
+  const impossible = impactYear !== "all" && pubYears.length > 0 && Number(impactYear) < Math.min(...pubYears);
+
+  const sumCtx: SumCtx = { entityName, years: activeYears, impactYear, mapMetric, persona };
+  const ai = (key: string) => (prof ? sectionSummary(key, prof, sumCtx) : "");
+
+  const doExport = () => {
+    if (!prof) return;
+    const csv = buildExportCSV(persona, entityName, activeYears, impactYear, prof);
+    const blob = new Blob([csv], { type: "text/csv;charset=utf-8" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    const safe = entityName.replace(/[^a-z0-9]+/gi, "_").slice(0, 40);
+    a.href = url;
+    a.download = `PIX_${persona}_${safe}_pub-${activeYears.join("-")}_impact-${impactYear}.csv`;
+    a.click();
+    URL.revokeObjectURL(url);
+  };
+
   const pubEmpty = (
     <div className="empty"><div className="empty-ico">◔</div>
       <div>Publication-level detail is available for <b>2026</b> outputs.{!has2026 && <> Add 2026 to the filter.</>}</div>
@@ -132,7 +152,11 @@ export default function App() {
         <div className="ctrls">
           <MultiDropdown label="Publication year" values={pubYears} options={idx.meta.pubYears} onChange={setPubYears} />
           <Dropdown label="Impact year" value={impactYear} options={yearOpts} onChange={setImpactYear} width={160} />
-          <EntitySelect label={cfg.entityLabel} current={entity} entities={cfg.entities} onSelect={setEntity} />
+          <EntitySelect label={cfg.entityLabel} current={entity} entities={cfg.entities} onSelect={setEntity}
+            allLabel={persona === "consortia" ? "All (Taylor & Francis)" : "All journals (Taylor & Francis)"} />
+          <button className="export-btn" onClick={doExport} disabled={!prof} title={`Export ${cfg.label} data (CSV)`}>
+            <span aria-hidden>⤓</span> Export
+          </button>
         </div>
       </div>
 
@@ -142,6 +166,13 @@ export default function App() {
         ) : entityData === null ? (
           <div className="ai"><div className="ai-ico">◔</div><div className="ai-body">
             <h3>No impact data</h3><p>No mentions or 2026 publications recorded for <b>{entityName}</b> in this dataset.</p>
+          </div></div>
+        ) : impossible ? (
+          <div className="ai"><div className="ai-ico">⚠</div><div className="ai-body">
+            <h3>No data for this combination</h3>
+            <p>A mention can't occur before its paper is published, so there's nothing to show for
+            work published in {[...pubYears].sort().join(" / ")} that was mentioned in <b>{impactYear}</b>.
+            Set the <b>Impact year</b> to “All years” or a year on/after {Math.min(...pubYears)}.</p>
           </div></div>
         ) : (
           <>
@@ -161,7 +192,7 @@ export default function App() {
             </div>
 
             <div className="grid">
-              <Card title="Global reach" sub="Impact by country — pick a metric, click a country" span={8}
+              <Card title="Global reach" sub="Impact by country — pick a metric, click a country" span={8} ai={ai("map")}
                 actions={<Dropdown label="Metric" value={mapMetric} width={200}
                   options={MAP_METRICS.map((m) => ({ v: m.key, label: m.label }))} onChange={(v) => { setMapMetric(v); setDrill(null); }} />}>
                 {mapReady
@@ -184,28 +215,29 @@ export default function App() {
 
             <div className="grid">
               <Card title="Engagement over time" sub={impactYear === "all" ? "Dated mentions per month" : `Dated mentions · ${impactYear}`} span={7}
+                ai={ai("timeline")}
                 note="Covers dated mentions (news, policy, blogs, dated social). Use the Impact year filter to focus a year.">
                 <EChart option={timelineArea(timeline, p)} height={280} />
               </Card>
-              <Card title="Where impact happens" sub="Mentions by channel (excl. social media)" span={5}>
+              <Card title="Where impact happens" sub="Mentions by channel (excl. social media)" span={5} ai={ai("channels")}>
                 <EChart option={channelBar(prof.channels_ns, p, CHANNEL_COLORS)} height={280} />
               </Card>
             </div>
 
             <div className="grid">
-              <Card title="Top countries" sub="By mention volume (excl. social media)" span={4}>
+              <Card title="Top countries" sub="By mention volume (excl. social media)" span={4} ai={ai("countries")}>
                 {prof.countries_ns.some((c) => c.name !== "Unknown" && c.value > 0)
                   ? <EChart option={hBar(prof.countries_ns.filter((c) => c.name !== "Unknown").slice(0, 10), p)} height={300} />
                   : <div className="card-note" style={{ paddingTop: 10 }}>No country-level data for this selection.</div>}
               </Card>
-              <Card title="Reception" sub="Sentiment of mentions" span={4}>
+              <Card title="Reception" sub="Sentiment of mentions" span={4} ai={ai("sentiment")}>
                 <EChart option={sentimentSpectrum(prof.sentiment, p, dark)} height={64} />
                 <div className="spectrum-legend"><span>◀ Critical</span><span>Neutral</span><span>Positive ▶</span></div>
                 <div style={{ marginTop: 12 }}>
                   <RankedList items={[...prof.sentiment].reverse().filter((s) => s.value > 0).map((s) => ({ name: s.name, value: s.value }))} />
                 </div>
               </Card>
-              <Card title="Open research" sub="Open-access status" span={4}>
+              <Card title="Open research" sub="Open-access status" span={4} ai={ai("oa")}>
                 {prof.kpis.publications > 0
                   ? <EChart height={300} option={donut(prof.oa_mix, p, {
                     centerValue: `${pctOA(prof.kpis)}%`, centerLabel: "open access",
@@ -216,27 +248,27 @@ export default function App() {
             </div>
 
             <div className="grid">
-              <Card title="Knowledge & policy stakeholders" sub="Organisations citing this research in policy" span={7}>
+              <Card title="Knowledge & policy stakeholders" sub="Organisations citing this research in policy" span={7} ai={ai("stakeholders")}>
                 <RankedList metric="citations"
                   items={prof.stakeholders.slice(0, 10).filter((s) => s.name !== "Unknown").map((s) => ({ name: s.name, value: s.value }))} />
               </Card>
-              <Card title="SDG alignment" sub="UN Sustainable Development Goals" span={5}>
+              <Card title="SDG alignment" sub="UN Sustainable Development Goals" span={5} ai={ai("sdg")}>
                 {prof.sdg.length > 0 ? <EChart option={hBar(prof.sdg.slice(0, 8), p)} height={300} /> : pubEmpty}
               </Card>
             </div>
 
             <div className="grid">
-              <Card title="Most-discussed research outputs" sub="By Altmetric Attention Score" span={7}>
+              <Card title="Most-discussed research outputs" sub="By Altmetric Attention Score" span={7} ai={ai("outputs")}>
                 <RankedList items={prof.top_outputs.slice(0, 8).map((o) => ({ name: o.title, sub: o.journal, value: o.attention }))} />
               </Card>
-              <Card title="Top journals" sub="By mention volume" span={5}>
+              <Card title="Top journals" sub="By mention volume" span={5} ai={ai("journals")}>
                 <RankedList items={prof.top_journals.slice(0, 8).map((j) => ({ name: j.name, value: j.mentions }))} />
               </Card>
             </div>
 
             <div className="grid">
               <Card span={12} title={persona === "consortia" ? "Institutional collaboration network" : "Research collaboration network"}
-                sub="Countries co-publishing on the same outputs"
+                sub="Countries co-publishing on the same outputs" ai={ai("network")}
                 note="Node size = publications with a research organisation in that country; links = co-authored publications.">
                 {prof.network.nodes.length > 1
                   ? <EChart option={network(prof.network, p)} height={420} />

@@ -11,9 +11,31 @@ function useOutside(onClose: () => void) {
   return ref;
 }
 
-export function Card({ title, sub, span = 6, actions, note, children }: Readonly<{
-  title: string; sub?: string; span?: number; actions?: ReactNode; note?: string; children: ReactNode;
+export function Modal({ title, onClose, children }: Readonly<{ title: string; onClose: () => void; children: ReactNode }>) {
+  useEffect(() => {
+    const h = (e: KeyboardEvent) => { if (e.key === "Escape") onClose(); };
+    document.addEventListener("keydown", h);
+    return () => document.removeEventListener("keydown", h);
+  }, [onClose]);
+  return (
+    <div className="modal-overlay" role="presentation" onClick={onClose}>
+      <div className="modal" role="dialog" aria-modal="true" aria-label={`${title} — AI summary`} onClick={(e) => e.stopPropagation()}>
+        <div className="modal-h">
+          <span className="modal-badge">✦ AI summary</span>
+          <button className="modal-x" onClick={onClose} aria-label="Close">✕</button>
+        </div>
+        <h3 className="modal-title">{title}</h3>
+        <p className="modal-body">{children}</p>
+        <div className="modal-foot">Generated from the current entity and filter selection.</div>
+      </div>
+    </div>
+  );
+}
+
+export function Card({ title, sub, span = 6, actions, note, ai, children }: Readonly<{
+  title: string; sub?: string; span?: number; actions?: ReactNode; note?: string; ai?: string; children: ReactNode;
 }>) {
+  const [open, setOpen] = useState(false);
   return (
     <section className={`card col-${span}`}>
       <div className="card-h">
@@ -21,10 +43,14 @@ export function Card({ title, sub, span = 6, actions, note, children }: Readonly
           <h2>{title}</h2>
           {sub && <div className="sub">{sub}</div>}
         </div>
-        {actions}
+        <div className="card-actions">
+          {actions}
+          {ai && <button className="ai-btn" title="AI summary of this section" onClick={() => setOpen(true)}>✦</button>}
+        </div>
       </div>
       {children}
       {note && <div className="card-note">{note}</div>}
+      {open && ai && <Modal title={title} onClose={() => setOpen(false)}>{ai}</Modal>}
     </section>
   );
 }
@@ -121,17 +147,18 @@ export function RankedList({ items, metric }: Readonly<{
   );
 }
 
-export function EntitySelect({ label, current, entities, onSelect, defaultLabel = "All (Taylor & Francis)" }: Readonly<{
-  label: string; current: string; entities: EntityMeta[]; onSelect: (id: string) => void; defaultLabel?: string;
+export function EntitySelect({ label, current, entities, onSelect, allLabel }: Readonly<{
+  label: string; current: string; entities: EntityMeta[]; onSelect: (id: string) => void; allLabel?: string;
 }>) {
   const [open, setOpen] = useState(false);
   const [q, setQ] = useState("");
   const ref = useOutside(() => setOpen(false));
-  const currentName = entities.find((e) => e.id === current)?.name ?? (current === "__all__" ? defaultLabel : current);
+  const currentName = entities.find((e) => e.id === current)?.name ?? (current === "__all__" ? (allLabel ?? "All") : current);
   const filtered = useMemo(() => {
     const ql = q.toLowerCase();
     return entities.filter((e) => e.name.toLowerCase().includes(ql) || (e.full ?? "").toLowerCase().includes(ql)).slice(0, 80);
   }, [entities, q]);
+  const showAll = allLabel && (!q || allLabel.toLowerCase().includes(q.toLowerCase()));
   const pick = (id: string) => { onSelect(id); setOpen(false); setQ(""); };
   return (
     <div className="select-wrap" ref={ref}>
@@ -143,13 +170,19 @@ export function EntitySelect({ label, current, entities, onSelect, defaultLabel 
       {open && (
         <div className="select-pop">
           <input className="select-search" placeholder="Search…" value={q} autoFocus onChange={(e) => setQ(e.target.value)} />
+          {showAll && (
+            <button className={"opt" + (current === "__all__" ? " sel" : "")} onClick={() => pick("__all__")}>
+              <span className="opt-name">{allLabel}</span>
+              <span className="o-sub">everything</span>
+            </button>
+          )}
           {filtered.map((e) => (
             <button key={e.id} className={"opt" + (current === e.id ? " sel" : "")} onClick={() => pick(e.id)}>
               <span className="opt-name">{e.name}</span>
               <span className="o-sub">{fmtFull(e.mentions)}m · {fmtFull(e.publications)}p</span>
             </button>
           ))}
-          {filtered.length === 0 && <div className="card-note" style={{ padding: 10 }}>No match.</div>}
+          {filtered.length === 0 && !showAll && <div className="card-note" style={{ padding: 10 }}>No match.</div>}
         </div>
       )}
     </div>

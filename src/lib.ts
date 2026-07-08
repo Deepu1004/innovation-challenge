@@ -175,11 +175,9 @@ export const CHANNEL_COLORS: Record<string, number> = {
   "Patent": 7, "Podcast": 6, "Video": 5, "Encyclopedia": 1, "Academic": 4, "Other": 0,
 };
 export const MAP_METRICS: { key: string; label: string }[] = [
-  { key: "mentions", label: "All mentions" },
-  { key: "news", label: "News stories" },
-  { key: "policy", label: "Policy & guidelines" },
+  { key: "policies", label: "Policies" },
   { key: "patents", label: "Patents" },
-  { key: "blogs", label: "Blogs" },
+  { key: "clinical", label: "Clinical guidelines" },
 ];
 
 // ---------- persona summaries ----------
@@ -229,4 +227,126 @@ export function kpiValue(key: string, p: Profile): string {
     case "countries": return fmt(countriesReached(p));
     default: return "–";
   }
+}
+
+// ---------- per-section AI summaries (for the clickable popups) ----------
+export interface SumCtx { entityName: string; years: string[]; impactYear: string; mapMetric?: string; persona: PersonaKey }
+function windowPhrase(years: string[], impactYear: string): string {
+  const sy = [...years].sort();
+  const yp = sy.length === 1 ? sy[0] : `${sy[0]}–${sy.at(-1)}`;
+  return impactYear === "all" ? `published ${yp}` : `published ${yp}, mentioned in ${impactYear}`;
+}
+const pctStr = (part: number, total: number) => (total ? `${Math.round((part / total) * 100)}%` : "0%");
+const topN = (l: NV[], n = 3) => l.filter((x) => x.name !== "Unknown" && x.value > 0).slice(0, n);
+const list3 = (t: NV[], noun: string) =>
+  t.map((x, i) => `${i === 0 ? "" : i === t.length - 1 ? " and " : ", "}${x.name} (${fmtFull(x.value)}${noun})`).join("");
+
+export function sectionSummary(key: string, p: Profile, ctx: SumCtx): string {
+  const w = windowPhrase(ctx.years, ctx.impactYear);
+  const k = p.kpis;
+  switch (key) {
+    case "overview":
+      return summaryFor(ctx.persona, ctx.entityName, ctx.entityName === "Taylor & Francis Group", p, ctx.years, ctx.impactYear);
+    case "channels": {
+      const t = topN(p.channels_ns); const sum = p.channels_ns.reduce((s, x) => s + x.value, 0);
+      if (!t.length) return `No non-social mentions for ${ctx.entityName} in this window (${w}).`;
+      return `For research ${w}, ${ctx.entityName}'s engagement (excluding social media) is led by${list3(t, " mentions")}. In total ${fmtFull(sum)} mentions span ${p.channels_ns.length} channels.`;
+    }
+    case "map": {
+      const label = MAP_METRICS.find((m) => m.key === ctx.mapMetric)?.label ?? "signals";
+      const arr = p.map_metrics[ctx.mapMetric ?? "policies"] ?? []; const t = topN(arr);
+      if (!t.length) return `No ${label.toLowerCase()} recorded by country for ${ctx.entityName} (${w}).`;
+      return `This map shows ${label.toLowerCase()} by country (${w}). Leading:${list3(t, "")}. ${arr.filter((x) => x.value > 0).length} countries recorded ${label.toLowerCase()}.`;
+    }
+    case "timeline": {
+      if (!p.timeline.length) return `No dated mentions for ${ctx.entityName} (${w}). Undated social posts are excluded from the timeline.`;
+      const peak = [...p.timeline].sort((a, b) => b.value - a.value)[0];
+      const sum = p.timeline.reduce((s, x) => s + x.value, 0);
+      return `Dated mentions for research ${w} total ${fmtFull(sum)} across ${p.timeline.length} months, peaking in ${peak.name} (${fmtFull(peak.value)}). Undated social posts are excluded.`;
+    }
+    case "countries": {
+      const t = topN(p.countries_ns);
+      if (!t.length) return `No country-level (non-social) data for ${ctx.entityName} (${w}).`;
+      return `Excluding social media, the widest reach is${list3(t, " mentions")} — ${countriesReached(p)} countries in total (${w}).`;
+    }
+    case "sentiment": {
+      const tot = p.sentiment.reduce((s, x) => s + x.value, 0);
+      if (!tot) return `No sentiment data for ${ctx.entityName} (${w}).`;
+      const pos = p.sentiment.filter((x) => x.name.includes("positive")).reduce((s, x) => s + x.value, 0);
+      const neg = p.sentiment.filter((x) => x.name.includes("negative")).reduce((s, x) => s + x.value, 0);
+      const topS = [...p.sentiment].sort((a, b) => b.value - a.value)[0];
+      return `Reception of ${ctx.entityName} (${w}) is ${toneOf(p.sentiment)} — ${pctStr(pos, tot)} positive, ${pctStr(neg, tot)} negative. Most common: “${topS.name}” (${fmtFull(topS.value)}).`;
+    }
+    case "oa": {
+      if (!k.publications) return `Open-access detail needs 2026 publications; none are in this selection.`;
+      const g = (n: string) => p.oa_mix.find((x) => x.name === n)?.value ?? 0;
+      return `${pctOA(k)}% of ${ctx.entityName}'s ${fmtFull(k.publications)} outputs are open access — ${fmtFull(g("Gold"))} gold, ${fmtFull(g("Hybrid"))} hybrid, ${fmtFull(g("Bronze"))} bronze, ${fmtFull(g("Green"))} green; ${fmtFull(g("Closed"))} remain closed.`;
+    }
+    case "stakeholders": {
+      const t = topN(p.stakeholders);
+      if (!t.length) return `No policy or guideline citations recorded for ${ctx.entityName} (${w}).`;
+      return `${p.stakeholders.length} organisations cite ${ctx.entityName}'s research in policy (${w}), led by${list3(t, " citations")}.`;
+    }
+    case "sdg": {
+      const t = topN(p.sdg);
+      if (!t.length) return `SDG alignment needs 2026 publications; none are in this selection.`;
+      return `${ctx.entityName}'s research aligns most with${list3(t, " outputs")}. ${p.sdg.length} SDGs represented.`;
+    }
+    case "outputs": {
+      if (!p.top_outputs.length) return `No mentioned outputs for ${ctx.entityName} (${w}).`;
+      const o = p.top_outputs[0];
+      return `The most-discussed output for ${ctx.entityName} (${w}) is “${o.title}” — ${fmtFull(o.attention)} Altmetric attention${o.journal ? `, in ${o.journal}` : ""}. The top ${Math.min(8, p.top_outputs.length)} by attention are listed.`;
+    }
+    case "journals": {
+      const t = topN(p.top_journals.map((j) => ({ name: j.name, value: j.mentions })));
+      if (!t.length) return `No journal-level mentions for ${ctx.entityName} (${w}).`;
+      return `Top journals for ${ctx.entityName} (${w}):${list3(t, " mentions")}.`;
+    }
+    case "network": {
+      if (p.network.nodes.length < 2) return `Not enough multi-country collaboration to summarise for ${ctx.entityName}.`;
+      const t = [...p.network.nodes].sort((a, b) => b.value - a.value).slice(0, 3);
+      const e = [...p.network.edges].sort((a, b) => b.value - a.value)[0];
+      return `Collaboration spans ${p.network.nodes.length} countries, centred on ${t[0].name} (${fmtFull(t[0].value)} outputs). Strongest partnership: ${e ? `${e.source}–${e.target} (${e.value} co-published)` : "—"}.`;
+    }
+    default: return "";
+  }
+}
+
+// ---------- CSV export ----------
+function csvCell(v: unknown): string {
+  const s = String(v ?? "");
+  return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
+}
+const csvRows = (rows: (string | number)[][]) => rows.map((r) => r.map(csvCell).join(",")).join("\n");
+
+export function buildExportCSV(persona: PersonaKey, entityName: string, years: string[], impactYear: string, p: Profile): string {
+  const L: string[] = ["PIX — Partner Impact Experience export"];
+  L.push(csvRows([["Persona", persona], ["Entity", entityName],
+    ["Publication years", [...years].sort().join(" / ")], ["Impact year", impactYear === "all" ? "All" : impactYear]]));
+  const sec = (t: string) => { L.push(""); L.push(`# ${t}`); };
+  const nvSec = (t: string, cols: [string, string], arr: { name: string; value: number }[]) => {
+    sec(t); L.push(csvRows([cols, ...arr.map((x) => [x.name, x.value] as (string | number)[])]));
+  };
+  const k = p.kpis;
+  sec("KPIs");
+  L.push(csvRows([["Metric", "Value"], ["Published papers", k.publications], ["Open access %", pctOA(k)],
+    ["Citations", k.citations], ["Total mentions", k.mentions], ["Attention score", k.attention],
+    ["Policy & guidelines", k.policy], ["Patents", k.patents], ["News stories", k.news], ["Countries reached", countriesReached(p)]]));
+  nvSec("Where impact happens (excl. social)", ["Channel", "Mentions"], p.channels_ns);
+  nvSec("Top countries (excl. social)", ["Country", "Mentions"], p.countries_ns);
+  nvSec("Reception (sentiment)", ["Sentiment", "Mentions"], p.sentiment);
+  nvSec("Open access", ["Type", "Outputs"], p.oa_mix);
+  nvSec("Publication mix", ["Document type", "Outputs"], p.pub_mix);
+  nvSec("SDG alignment", ["SDG", "Outputs"], p.sdg);
+  nvSec("Knowledge & policy stakeholders", ["Organisation", "Citations"], p.stakeholders);
+  nvSec("Top journals", ["Journal", "Mentions"], p.top_journals.map((j) => ({ name: j.name, value: j.mentions })));
+  nvSec("Engagement timeline", ["Month", "Mentions"], p.timeline);
+  sec("Most-discussed outputs");
+  L.push(csvRows([["Title", "Journal", "Attention (AAS)", "DOI"], ...p.top_outputs.map((o) => [o.title, o.journal, o.attention, o.doi] as (string | number)[])]));
+  for (const m of MAP_METRICS) nvSec(`Map — ${m.label} by country`, ["Country", m.label], p.map_metrics[m.key] ?? []);
+  sec("Collaboration network — nodes");
+  L.push(csvRows([["Country", "Publications"], ...p.network.nodes.map((n) => [n.name, n.value] as (string | number)[])]));
+  sec("Collaboration network — links");
+  L.push(csvRows([["Source", "Target", "Co-published"], ...p.network.edges.map((e) => [e.source, e.target, e.value] as (string | number)[])]));
+  return L.join("\n");
 }
