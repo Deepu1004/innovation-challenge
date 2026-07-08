@@ -175,6 +175,7 @@ export const CHANNEL_COLORS: Record<string, number> = {
   "Patent": 7, "Podcast": 6, "Video": 5, "Encyclopedia": 1, "Academic": 4, "Other": 0,
 };
 export const MAP_METRICS: { key: string; label: string }[] = [
+  { key: "all", label: "All mentions" },
   { key: "policies", label: "Policies" },
   { key: "patents", label: "Patents" },
   { key: "clinical", label: "Clinical guidelines" },
@@ -349,4 +350,88 @@ export function buildExportCSV(persona: PersonaKey, entityName: string, years: s
   sec("Collaboration network — links");
   L.push(csvRows([["Source", "Target", "Co-published"], ...p.network.edges.map((e) => [e.source, e.target, e.value] as (string | number)[])]));
   return L.join("\n");
+}
+
+// ---------- PDF export (lazy-loaded jsPDF) ----------
+function hexRGB(h: string): [number, number, number] {
+  const s = h.replace("#", "");
+  return [parseInt(s.slice(0, 2), 16), parseInt(s.slice(2, 4), 16), parseInt(s.slice(4, 6), 16)];
+}
+
+export async function exportPDF(
+  persona: PersonaKey, entityName: string, years: string[], impactYear: string, p: Profile, accentHex: string
+): Promise<void> {
+  const [{ jsPDF }, autoTableMod] = await Promise.all([import("jspdf"), import("jspdf-autotable")]);
+  const autoTable = autoTableMod.default;
+  const doc = new jsPDF({ unit: "pt", format: "a4" });
+  const accent = hexRGB(accentHex);
+  const W = doc.internal.pageSize.getWidth();
+  const H = doc.internal.pageSize.getHeight();
+  const M = 40;
+  const nv = (arr: { name: string; value: number }[]) => arr.map((x) => [x.name, fmtFull(x.value)]);
+
+  // ---- header ----
+  doc.setFillColor(accent[0], accent[1], accent[2]);
+  doc.rect(0, 0, W, 74, "F");
+  doc.setTextColor(255, 255, 255);
+  doc.setFont("helvetica", "bold"); doc.setFontSize(18);
+  doc.text("PIX — Partner Impact Experience", M, 34);
+  doc.setFont("helvetica", "normal"); doc.setFontSize(11);
+  doc.text(`${persona === "consortia" ? "Consortia" : "Societies"} impact report · Taylor & Francis Group`, M, 54);
+  let y = 96;
+  doc.setTextColor(20, 20, 30); doc.setFont("helvetica", "bold"); doc.setFontSize(15);
+  doc.text(entityName, M, y); y += 8;
+  doc.setFont("helvetica", "normal"); doc.setFontSize(10); doc.setTextColor(110, 110, 120);
+  doc.text(`Publication year: ${[...years].sort().join(" / ")}   ·   Impact year: ${impactYear === "all" ? "All" : impactYear}`, M, y + 10);
+  y += 30;
+
+  const k = p.kpis;
+  const section = (title: string, head: string[], body: (string | number)[][]) => {
+    if (!body.length) return;
+    if (y > H - 90) { doc.addPage(); y = M; }
+    doc.setFont("helvetica", "bold"); doc.setFontSize(12); doc.setTextColor(accent[0], accent[1], accent[2]);
+    doc.text(title, M, y);
+    autoTable(doc, {
+      startY: y + 8, head: [head], body,
+      styles: { fontSize: 9, cellPadding: 4, textColor: [30, 30, 40] },
+      headStyles: { fillColor: accent, textColor: [255, 255, 255], fontStyle: "bold" },
+      alternateRowStyles: { fillColor: [244, 246, 250] },
+      margin: { left: M, right: M },
+      theme: "striped",
+    });
+    y = ((doc as unknown as { lastAutoTable: { finalY: number } }).lastAutoTable.finalY) + 24;
+  };
+
+  section("Key metrics", ["Metric", "Value"], [
+    ["Published papers (2026)", fmtFull(k.publications)], ["Open access", `${pctOA(k)}%`],
+    ["Citations", fmtFull(k.citations)], ["Total mentions", fmtFull(k.mentions)],
+    ["Attention score", fmtFull(k.attention)], ["Policy & guidelines", fmtFull(k.policy)],
+    ["Patents", fmtFull(k.patents)], ["News stories", fmtFull(k.news)],
+    ["Countries reached", fmtFull(countriesReached(p))],
+  ]);
+  section("Where impact happens (excl. social)", ["Channel", "Mentions"], nv(p.channels_ns));
+  section("Top countries (excl. social)", ["Country", "Mentions"], nv(p.countries_ns));
+  section("Reception (sentiment)", ["Sentiment", "Mentions"], nv(p.sentiment.filter((s) => s.value > 0)));
+  section("Open access", ["Type", "Outputs"], nv(p.oa_mix));
+  section("Publication mix", ["Document type", "Outputs"], nv(p.pub_mix));
+  section("SDG alignment", ["SDG", "Outputs"], nv(p.sdg));
+  section("Knowledge & policy stakeholders", ["Organisation", "Citations"], nv(p.stakeholders.filter((s) => s.name !== "Unknown")));
+  section("Top journals", ["Journal", "Mentions"], p.top_journals.map((j) => [j.name, fmtFull(j.mentions)]));
+  section("Engagement timeline (dated mentions)", ["Month", "Mentions"], nv(p.timeline));
+  section("Most-discussed research outputs", ["Title", "Journal", "Attention"],
+    p.top_outputs.map((o) => [o.title, o.journal, fmtFull(o.attention)]));
+  for (const m of MAP_METRICS) section(`Map — ${m.label} by country`, ["Country", "Mentions"], nv((p.map_metrics[m.key] ?? []).filter((x) => x.value > 0)));
+  section("Collaboration network — countries", ["Country", "Publications"], nv(p.network.nodes));
+  section("Collaboration network — partnerships", ["Country A", "Country B", "Co-published"],
+    p.network.edges.map((e) => [e.source, e.target, e.value]));
+
+  // footer page numbers
+  const pages = doc.getNumberOfPages();
+  for (let i = 1; i <= pages; i++) {
+    doc.setPage(i);
+    doc.setFontSize(8); doc.setTextColor(150, 150, 160);
+    doc.text(`PIX — Partner Impact Experience   ·   page ${i} of ${pages}`, M, H - 18);
+  }
+  const safe = entityName.replace(/[^a-z0-9]+/gi, "_").slice(0, 40);
+  doc.save(`PIX_${persona}_${safe}_pub-${[...years].sort().join("-")}_impact-${impactYear}.pdf`);
 }

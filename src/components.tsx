@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { createPortal } from "react-dom";
 import { fmt, fmtFull, type EntityMeta } from "./lib";
 
 function useOutside(onClose: () => void) {
@@ -11,13 +12,15 @@ function useOutside(onClose: () => void) {
   return ref;
 }
 
+// rendered once at app root via a portal so it escapes any card's containing block
 export function Modal({ title, onClose, children }: Readonly<{ title: string; onClose: () => void; children: ReactNode }>) {
   useEffect(() => {
     const h = (e: KeyboardEvent) => { if (e.key === "Escape") onClose(); };
     document.addEventListener("keydown", h);
-    return () => document.removeEventListener("keydown", h);
+    document.body.style.overflow = "hidden";
+    return () => { document.removeEventListener("keydown", h); document.body.style.overflow = ""; };
   }, [onClose]);
-  return (
+  return createPortal(
     <div className="modal-overlay" role="presentation" onClick={onClose}>
       <div className="modal" role="dialog" aria-modal="true" aria-label={`${title} — AI summary`} onClick={(e) => e.stopPropagation()}>
         <div className="modal-h">
@@ -26,16 +29,17 @@ export function Modal({ title, onClose, children }: Readonly<{ title: string; on
         </div>
         <h3 className="modal-title">{title}</h3>
         <p className="modal-body">{children}</p>
-        <div className="modal-foot">Generated from the current entity and filter selection.</div>
+        <div className="modal-foot">Generated live from the current entity and filter selection.</div>
       </div>
-    </div>
+    </div>,
+    document.body
   );
 }
 
-export function Card({ title, sub, span = 6, actions, note, ai, children }: Readonly<{
-  title: string; sub?: string; span?: number; actions?: ReactNode; note?: string; ai?: string; children: ReactNode;
+export function Card({ title, sub, span = 6, actions, note, aiKey, onAi, children }: Readonly<{
+  title: string; sub?: string; span?: number; actions?: ReactNode; note?: string;
+  aiKey?: string; onAi?: (key: string, title: string) => void; children: ReactNode;
 }>) {
-  const [open, setOpen] = useState(false);
   return (
     <section className={`card col-${span}`}>
       <div className="card-h">
@@ -45,12 +49,13 @@ export function Card({ title, sub, span = 6, actions, note, ai, children }: Read
         </div>
         <div className="card-actions">
           {actions}
-          {ai && <button className="ai-btn" title="AI summary of this section" onClick={() => setOpen(true)}>✦</button>}
+          {aiKey && onAi && (
+            <button className="ai-btn" title="AI summary of this section" onClick={() => onAi(aiKey, title)}>✦</button>
+          )}
         </div>
       </div>
       {children}
       {note && <div className="card-note">{note}</div>}
-      {open && ai && <Modal title={title} onClose={() => setOpen(false)}>{ai}</Modal>}
     </section>
   );
 }
