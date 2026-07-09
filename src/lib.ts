@@ -218,8 +218,7 @@ export function summaryFor(persona: PersonaKey, entity: string, isAll: boolean, 
   }
   const who = isAll ? "the Taylor & Francis portfolio" : entity;
   const oa = p.kpis.publications ? `, and ${pctOA(p.kpis)}% of output is open access` : "";
-  let s = `For research ${window}, ${who} generated ${fmtFull(p.kpis.mentions)} mentions, led by ${topChannelNS(p)} (excluding social).`;
-  s += ` Reception is ${toneOf(p.sentiment)}${oa}.`;
+  let s = `For research ${window}, ${who} generated ${fmtFull(p.kpis.mentions)} mentions, led by ${topChannelNS(p)} (excluding social)${oa}.`;
   if (sdg) s += ` Strongest SDG alignment: ${sdg}.`;
   if (st) s += ` Policy interest from ${st}.`;
   return s;

@@ -238,17 +238,6 @@ export default function App() {
             </div>
 
             <div className="grid">
-              <Card title="Engagement over time" sub={impactYear === "all" ? "Dated mentions per month" : `Dated mentions · ${impactYear}`} span={7}
-                aiKey="timeline" onAi={openAi}
-                note="Covers dated mentions (news, policy, blogs, dated social). Use the Impact year filter to focus a year.">
-                <EChart option={timelineArea(timeline, p)} height={280} />
-              </Card>
-              <Card title="Where impact happens" sub="Mentions by channel" span={5} aiKey="channels" onAi={openAi}>
-                <EChart option={channelBar(prof.channels_ns, p, CHANNEL_COLORS)} height={280} />
-              </Card>
-            </div>
-
-            <div className="grid">
               <Card title="Top countries" sub="By mention volume (excl. social media)" span={6} aiKey="countries" onAi={openAi}>
                 {prof.countries_ns.some((c) => c.name !== "Unknown" && c.value > 0)
                   ? <EChart option={hBar(prof.countries_ns.filter((c) => c.name !== "Unknown").slice(0, 10), p)} height={300} />
@@ -261,6 +250,17 @@ export default function App() {
                     colors: [p.series[2], p.series[0], p.series[7], p.series[3], p.mid]
                   })} />
                   : pubEmpty}
+              </Card>
+            </div>
+
+            <div className="grid">
+              <Card title="Engagement over time" sub={impactYear === "all" ? "Dated mentions per month" : `Dated mentions · ${impactYear}`} span={7}
+                aiKey="timeline" onAi={openAi}
+                note="Covers dated mentions (news, policy, blogs, dated social). Use the Impact year filter to focus a year.">
+                <EChart option={timelineArea(timeline, p)} height={280} />
+              </Card>
+              <Card title="Where impact happens" sub="Mentions by channel" span={5} aiKey="channels" onAi={openAi}>
+                <EChart option={channelBar(prof.channels_ns, p, CHANNEL_COLORS)} height={280} />
               </Card>
             </div>
 
@@ -286,7 +286,9 @@ export default function App() {
                   : <div className="card-note" style={{ paddingTop: 10 }}>Patent citations don’t carry a citing organisation — select Policy or Clinical guidelines to see stakeholders.</div>}
               </Card>
               <Card title="SDG alignment" sub="UN Sustainable Development Goals" span={5} aiKey="sdg" onAi={openAi}>
-                {prof.sdg.length > 0 ? <EChart option={hBar(prof.sdg.slice(0, 8), p)} height={300} /> : pubEmpty}
+                {prof.sdg.length > 0 ? <EChart option={hBar(prof.sdg.slice(0, 8), p, {
+                  colors: prof.sdg.slice(0, 8).map((_, i) => p.series[i % p.series.length]),
+                })} height={300} /> : pubEmpty}
               </Card>
             </div>
 
@@ -302,16 +304,13 @@ export default function App() {
             <div className="grid">
               <Card title="Contributor impact"
                 sub={persona === "consortia" ? "Member institutions by research output (2026)" : "Top institutions by research output (2026)"}
-                span={12} aiKey="contributors" onAi={openAi}
+                span={5} aiKey="contributors" onAi={openAi}
                 note="Institutions credited on this entity’s 2026 research outputs (Dimensions research organisations).">
                 {prof.contributors.length
-                  ? <RankedList metric="outputs" items={prof.contributors.slice(0, 12).map((c) => ({ name: c.name, value: c.value }))} />
+                  ? <RankedList metric="outputs" items={prof.contributors.slice(0, 8).map((c) => ({ name: c.name, value: c.value }))} />
                   : pubEmpty}
               </Card>
-            </div>
-
-            <div className="grid">
-              <Card span={12} title={persona === "consortia" ? "Institutional collaboration network" : "Research collaboration network"}
+              <Card span={7} title={persona === "consortia" ? "Institutional collaboration network" : "Research collaboration network"}
                 sub="Countries co-publishing on the same outputs" aiKey="network" onAi={openAi}
                 note="Node size = publications with a research organisation in that country; links = co-authored publications.">
                 {prof.network.nodes.length > 1
