@@ -235,12 +235,10 @@ body::before {
   max-width: 1440px;
   width: 100%;
   margin: 0 auto;
-  padding: 26px 28px 6px;
+  padding: 24px 28px 8px;
   display: flex;
-  align-items: flex-end;
-  justify-content: space-between;
-  gap: 20px;
-  flex-wrap: wrap;
+  flex-direction: column;
+  gap: 18px;
 }
 
 .greet .hi {
@@ -266,10 +264,44 @@ body::before {
 
 .ctrls {
   display: flex;
-  align-items: center;
+  align-items: flex-end;
   gap: 12px;
   flex-wrap: wrap;
 }
+
+/* Filter toolbar: fixed-width fields so the row never reflows with the selected
+   value, and a compact stacked (label-over-value) look. */
+.ctrls .select-wrap { flex: 0 0 auto; }
+.ctrls .select-btn {
+  position: relative;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 2px;
+  min-width: 0;
+  padding: 8px 34px 8px 14px;   /* right room for the caret */
+}
+.ctrls .select-btn .lbl {
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: .05em;
+  text-transform: uppercase;
+}
+.ctrls .select-btn .val {
+  flex: none;
+  width: 100%;
+  font-size: 14px;
+}
+.ctrls .select-btn > span[aria-hidden] {   /* caret, centred on the right */
+  position: absolute;
+  right: 12px;
+  top: 50%;
+  transform: translateY(-50%);
+}
+.ctrls .select-btn.compact { width: 172px; }        /* Publication year / Impact year */
+.ctrls .select-btn:not(.compact) { width: 300px; }  /* Consortium / member — name truncates (shown in full as the title) */
+
+/* Export is an action, not a filter: pin it to the far right, clearly separated. */
+.ctrls .export-btn { margin-left: auto; }
 
 /* year multiselect */
 .yearsel {

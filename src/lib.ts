@@ -16,7 +16,7 @@ export interface PubCell {
   publications: number; oa_count: number; citations: number;
   sdg: NV[]; oa_mix: NV[]; pub_mix: NV[]; network: Network;
   top_journals: { name: string; mentions: number }[]; top_outputs: Output[];
-  country_detail: Record<string, MentionItem[]>;
+  country_detail: Record<string, Record<string, MentionItem[]>>;  // metric -> country -> items
   impact: Record<string, MenCell>;
 }
 export type Cube = Record<string, PubCell>;   // keyed by publication year
@@ -32,7 +32,7 @@ export interface Profile {
   map_metrics: Record<string, NV[]>;
   sdg: NV[]; oa_mix: NV[]; pub_mix: NV[]; network: Network;
   top_journals: { name: string; mentions: number }[]; top_outputs: Output[];
-  country_detail: Record<string, MentionItem[]>;
+  country_detail: Record<string, Record<string, MentionItem[]>>;  // metric -> country -> items
 }
 
 export interface EntityMeta { id: string; name: string; full?: string; mentions: number; publications: number }
@@ -94,13 +94,18 @@ export function mergeProfiles(cube: Cube, pubYears: string[], impactYear: string
   const map_metrics: Record<string, NV[]> = {};
   for (const k of mapKeys) map_metrics[k] = mergeNV(menCells.map((c) => c.map_metrics[k] ?? [])).sort(desc).slice(0, 30);
 
-  // country detail (pub-level)
-  const cd: Record<string, MentionItem[]> = {};
-  for (const c of pubCells) for (const [country, items] of Object.entries(c.country_detail ?? {})) cd[country] = [...(cd[country] ?? []), ...items];
-  for (const country of Object.keys(cd)) {
-    const seen = new Set<string>();
-    cd[country] = cd[country].sort((a, b) => b.attention - a.attention).filter((x) => !seen.has(x.title) && seen.add(x.title)).slice(0, 6);
-  }
+  // country detail (pub-level), keyed by map metric -> country -> items
+  const cd: Record<string, Record<string, MentionItem[]>> = {};
+  for (const c of pubCells)
+    for (const [metric, byCountry] of Object.entries(c.country_detail ?? {})) {
+      cd[metric] ??= {};
+      for (const [country, items] of Object.entries(byCountry)) cd[metric][country] = [...(cd[metric][country] ?? []), ...items];
+    }
+  for (const metric of Object.keys(cd))
+    for (const country of Object.keys(cd[metric])) {
+      const seen = new Set<string>();
+      cd[metric][country] = cd[metric][country].sort((a, b) => b.attention - a.attention).filter((x) => !seen.has(x.title) && seen.add(x.title)).slice(0, 6);
+    }
   // journals + outputs + network (pub-level)
   const jMap = new Map<string, number>();
   pubCells.forEach((c) => (c.top_journals ?? []).forEach((j) => jMap.set(j.name, (jMap.get(j.name) ?? 0) + j.mentions)));
@@ -174,6 +179,9 @@ export const CHANNEL_COLORS: Record<string, number> = {
   "Social media": 0, "News": 1, "Blog": 2, "Policy": 4, "Clinical guideline": 3,
   "Patent": 7, "Podcast": 6, "Video": 5, "Encyclopedia": 1, "Academic": 4, "Other": 0,
 };
+// Map metrics. Patents have no mention `country`, so they're mapped by filing
+// jurisdiction derived from the patent number (build_web_data.PATENT_OFFICE);
+// EP/WO patents count in the KPI but don't colour a single country.
 export const MAP_METRICS: { key: string; label: string }[] = [
   { key: "all", label: "All mentions" },
   { key: "policies", label: "Policies" },

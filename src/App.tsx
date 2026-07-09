@@ -92,7 +92,9 @@ export default function App() {
   const timeline = prof ? prof.timeline : [];
   const has2026 = pubYears.includes(2026);
   const yearOpts = [{ v: "all", label: "All years" }, ...idx.meta.impactYears.map((y) => ({ v: String(y), label: String(y) }))];
-  const drillItems = drill && prof ? prof.country_detail[drill] ?? [] : [];
+  const metricLabel = MAP_METRICS.find((m) => m.key === mapMetric)?.label ?? "Mentions";
+  const metricNoun = mapMetric === "all" ? "mentions" : metricLabel.toLowerCase();
+  const drillItems = drill && prof ? prof.country_detail[mapMetric]?.[drill] ?? [] : [];
 
   // A mention cannot occur before its paper is published → an impact year earlier
   // than every selected publication year is an impossible combination (show nothing).
@@ -198,13 +200,14 @@ export default function App() {
             <div className="grid">
               <Card title="Global reach" sub="Impact by country — pick a metric, click a country" span={8} aiKey="map" onAi={openAi}
                 actions={<Dropdown label="Metric" value={mapMetric} width={200}
-                  options={MAP_METRICS.map((m) => ({ v: m.key, label: m.label }))} onChange={(v) => { setMapMetric(v); setDrill(null); }} />}>
+                  options={MAP_METRICS.map((m) => ({ v: m.key, label: m.label }))} onChange={setMapMetric} />}>
                 {mapReady
                   ? <EChart option={worldMap(prof.map_metrics[mapMetric] ?? [], p)} height={360}
                     onEvents={{ click: (e: any) => setDrill(e?.name ?? null) }} />
                   : <div className="card-note">Loading map…</div>}
               </Card>
-              <Card title={drill ? `In ${drill}` : "Country detail"} sub="Top outputs mentioned there" span={4}>
+              <Card title={drill ? `In ${drill}` : "Country detail"}
+                sub={mapMetric === "all" ? "Top outputs mentioned there" : `Top outputs — ${metricLabel}`} span={4}>
                 {drill
                   ? (drillItems.length
                     ? <div className="drill">{drillItems.map((it) => (
@@ -212,8 +215,8 @@ export default function App() {
                         <div className="dtitle">{it.title}</div>
                         <div className="dmeta"><span className="dchip">{it.channel}</span>{it.outlet && <span>{it.outlet}</span>}<span className="datt">{fmt(it.attention)} AAS</span></div>
                       </div>))}</div>
-                    : <div className="card-note" style={{ paddingTop: 10 }}>No detailed items for {drill} in this selection.</div>)
-                  : <div className="empty"><div className="empty-ico">◍</div><div>Click a country on the map to see the policy documents, articles and mentions from there.</div></div>}
+                    : <div className="card-note" style={{ paddingTop: 10 }}>No {metricNoun} from {drill} in this selection.</div>)
+                  : <div className="empty"><div className="empty-ico">◍</div><div>Click a country on the map to see the top {metricNoun} from there.</div></div>}
               </Card>
             </div>
 
@@ -223,7 +226,7 @@ export default function App() {
                 note="Covers dated mentions (news, policy, blogs, dated social). Use the Impact year filter to focus a year.">
                 <EChart option={timelineArea(timeline, p)} height={280} />
               </Card>
-              <Card title="Where impact happens" sub="Mentions by channel (excl. social media)" span={5} aiKey="channels" onAi={openAi}>
+              <Card title="Where impact happens" sub="Mentions by channel" span={5} aiKey="channels" onAi={openAi}>
                 <EChart option={channelBar(prof.channels_ns, p, CHANNEL_COLORS)} height={280} />
               </Card>
             </div>
