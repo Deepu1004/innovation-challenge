@@ -136,10 +136,10 @@ body::before {
 }
 
 .brand-sub2 {
-  font-size: 12px;
-  font-weight: 600;
-  color: var(--muted);
-  letter-spacing: 0;
+  font-size: 14px;
+  font-weight: 800;
+  color: var(--ink);
+  letter-spacing: -.01em;
 }
 
 .brand-txt>span {
