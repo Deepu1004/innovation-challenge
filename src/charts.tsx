@@ -169,6 +169,25 @@ export function worldMap(data: NV[], p: Palette): EChartsOption {
   };
 }
 
+// ---------------- network-style node graph (single category, no edges) ----------------
+export function nodeNetwork(data: NV[], p: Palette): EChartsOption {
+  const rows = [...data].filter((d) => d.value > 0);
+  const max = Math.max(...rows.map((r) => r.value), 1);
+  return {
+    tooltip: { ...tip(p), formatter: (o: any) => `${o.name}<br/><b>${fmtFull(o.value)}</b> outputs` },
+    series: [{
+      type: "graph", layout: "force", roam: true, draggable: true,
+      force: { repulsion: 180, gravity: 0.14 },
+      label: { show: true, color: p.ink2, fontSize: 10, position: "right" },
+      data: rows.map((r, i) => ({
+        name: r.name, value: r.value,
+        symbolSize: 14 + (r.value / max) * 46,
+        itemStyle: { color: p.series[i % p.series.length] },
+      })),
+    }],
+  };
+}
+
 // ---------------- network graph ----------------
 export function network(net: Network, p: Palette): EChartsOption {
   const max = Math.max(...net.nodes.map((n) => n.value), 1);

@@ -8,7 +8,7 @@ import {
 import { useTheme } from "./theme";
 import { Card, Kpi, RankedList, EntitySelect, Dropdown, MultiDropdown, ChannelSelect, Modal } from "./components";
 import {
-  EChart, hBar, channelBar, timelineArea, donut, worldMap, network,
+  EChart, hBar, channelBar, timelineArea, donut, worldMap, network, nodeNetwork,
 } from "./charts";
 
 const PERSONA_ORDER: PersonaKey[] = ["consortia", "societies"];
@@ -238,6 +238,32 @@ export default function App() {
             </div>
 
             <div className="grid">
+              <Card title="Societal impact" sub="Uptake in policy, clinical guidance & patents" span={7} aiKey="societal" onAi={openAi}
+                actions={<ChannelSelect label="Channels" values={socChannels} options={SOC_CHANNELS} onChange={setSocChannels} />}>
+                <div className="soc-stats">
+                  {SOC_CHANNELS.filter((c) => socChannels.includes(c.v)).map((c) => (
+                    <div className="soc-stat" key={c.v}>
+                      <div className="soc-val">{fmt(prof.channels_ns.find((x) => x.name === c.v)?.value ?? 0)}</div>
+                      <div className="soc-lbl">{c.label}</div>
+                    </div>
+                  ))}
+                </div>
+                {socChannels.some((c) => c === "Policy" || c === "Clinical guideline")
+                  ? (prof.stakeholders.filter((s) => s.name !== "Unknown").length
+                    ? <>
+                        <div className="soc-sub">Organisations citing this research in policy</div>
+                        <RankedList metric="citations"
+                          items={prof.stakeholders.slice(0, 8).filter((s) => s.name !== "Unknown").map((s) => ({ name: s.name, value: s.value }))} />
+                      </>
+                    : <div className="card-note" style={{ paddingTop: 10 }}>No citing organisations recorded for this selection.</div>)
+                  : <div className="card-note" style={{ paddingTop: 10 }}>Patent citations don’t carry a citing organisation — select Policy or Clinical guidelines to see stakeholders.</div>}
+              </Card>
+              <Card title="SDG alignment" sub="UN Sustainable Development Goals" span={5} aiKey="sdg" onAi={openAi}>
+                {prof.sdg.length > 0 ? <EChart option={nodeNetwork(prof.sdg.slice(0, 8), p)} height={300} /> : pubEmpty}
+              </Card>
+            </div>
+
+            <div className="grid">
               <Card title="Top countries" sub="By mention volume (excl. social media)" span={6} aiKey="countries" onAi={openAi}>
                 {prof.countries_ns.some((c) => c.name !== "Unknown" && c.value > 0)
                   ? <EChart option={hBar(prof.countries_ns.filter((c) => c.name !== "Unknown").slice(0, 10), p)} height={300} />
@@ -261,34 +287,6 @@ export default function App() {
               </Card>
               <Card title="Where impact happens" sub="Mentions by channel" span={5} aiKey="channels" onAi={openAi}>
                 <EChart option={channelBar(prof.channels_ns, p, CHANNEL_COLORS)} height={280} />
-              </Card>
-            </div>
-
-            <div className="grid">
-              <Card title="Societal impact" sub="Uptake in policy, clinical guidance & patents" span={7} aiKey="societal" onAi={openAi}
-                actions={<ChannelSelect label="Channels" values={socChannels} options={SOC_CHANNELS} onChange={setSocChannels} />}>
-                <div className="soc-stats">
-                  {SOC_CHANNELS.filter((c) => socChannels.includes(c.v)).map((c) => (
-                    <div className="soc-stat" key={c.v}>
-                      <div className="soc-val">{fmt(prof.channels_ns.find((x) => x.name === c.v)?.value ?? 0)}</div>
-                      <div className="soc-lbl">{c.label}</div>
-                    </div>
-                  ))}
-                </div>
-                {socChannels.some((c) => c === "Policy" || c === "Clinical guideline")
-                  ? (prof.stakeholders.filter((s) => s.name !== "Unknown").length
-                    ? <>
-                        <div className="soc-sub">Organisations citing this research in policy</div>
-                        <RankedList metric="citations"
-                          items={prof.stakeholders.slice(0, 8).filter((s) => s.name !== "Unknown").map((s) => ({ name: s.name, value: s.value }))} />
-                      </>
-                    : <div className="card-note" style={{ paddingTop: 10 }}>No citing organisations recorded for this selection.</div>)
-                  : <div className="card-note" style={{ paddingTop: 10 }}>Patent citations don’t carry a citing organisation — select Policy or Clinical guidelines to see stakeholders.</div>}
-              </Card>
-              <Card title="SDG alignment" sub="UN Sustainable Development Goals" span={5} aiKey="sdg" onAi={openAi}>
-                {prof.sdg.length > 0 ? <EChart option={hBar(prof.sdg.slice(0, 8), p, {
-                  colors: prof.sdg.slice(0, 8).map((_, i) => p.series[i % p.series.length]),
-                })} height={300} /> : pubEmpty}
               </Card>
             </div>
 
