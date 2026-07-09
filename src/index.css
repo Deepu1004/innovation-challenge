@@ -262,6 +262,41 @@ body::before {
   -webkit-text-fill-color: transparent;
 }
 
+/* aggregated total-documents headline under the greeting */
+.hero-docs {
+  margin-top: 8px;
+  font-size: 13px;
+  color: var(--muted);
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.hero-docs b {
+  font-size: 18px;
+  font-weight: 800;
+  color: var(--accent);
+}
+.hero-docs-sub { color: var(--ink-2); }
+
+/* societal-impact stat tiles */
+.soc-stats {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+  margin-bottom: 4px;
+}
+.soc-stat {
+  flex: 1 1 90px;
+  padding: 10px 12px;
+  border-radius: 12px;
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+}
+.soc-val { font-size: 22px; font-weight: 800; color: var(--ink); letter-spacing: -.02em; }
+.soc-lbl { font-size: 11px; color: var(--muted); font-weight: 600; margin-top: 2px; }
+.soc-sub { font-size: 12px; color: var(--muted); font-weight: 600; margin: 14px 0 6px; }
+
 .ctrls {
   display: flex;
   align-items: flex-end;

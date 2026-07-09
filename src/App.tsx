@@ -1,21 +1,21 @@
 import { useEffect, useMemo, useState } from "react";
 import * as echarts from "echarts";
 import {
-  loadIndex, loadEntity, mergeProfiles, summaryFor, sectionSummary, exportReplicaPDF, pctOA, countriesReached, fmt,
+  loadIndex, loadEntity, mergeProfiles, summaryFor, sectionSummary, exportReplicaPDF, pctOA, countriesReached, fmt, fmtFull,
   paletteFor, CHANNEL_COLORS, MAP_METRICS,
   type PortalIndex, type PersonaKey, type Cube, type Profile, type SumCtx,
 } from "./lib";
 import { useTheme } from "./theme";
-import { Card, Kpi, RankedList, EntitySelect, Dropdown, MultiDropdown, Modal } from "./components";
+import { Card, Kpi, RankedList, EntitySelect, Dropdown, MultiDropdown, ChannelSelect, Modal } from "./components";
 import {
-  EChart, hBar, channelBar, sentimentSpectrum, timelineArea, donut, worldMap, network,
+  EChart, hBar, channelBar, timelineArea, donut, worldMap, network,
 } from "./charts";
 
 const PERSONA_ORDER: PersonaKey[] = ["consortia", "societies"];
 
 const KPI_SETS: Record<PersonaKey, { key: string; label: string; sub: string }[]> = {
   consortia: [
-    { key: "publications", label: "Published papers", sub: "research outputs (2026)" },
+    { key: "publications", label: "Published papers", sub: "research outputs" },
     { key: "mentions", label: "Total mentions", sub: "worldwide" },
     { key: "attention", label: "Attention score", sub: "sum of Altmetric" },
     { key: "oa", label: "Open access", sub: "of the portfolio" },
@@ -36,7 +36,13 @@ const KPI_SETS: Record<PersonaKey, { key: string; label: string; sub: string }[]
   ],
 };
 
-// Flippable explainer cards for the consortia "Societal impact" section
+// Societal-impact channels (multi-select filter). Values match mention_channel.
+const SOC_CHANNELS = [
+  { v: "Policy", label: "Policy" },
+  { v: "Clinical guideline", label: "Clinical guidelines" },
+  { v: "Patent", label: "Patents" },
+];
+
 export default function App() {
   const { dark, toggle } = useTheme();
   const [idx, setIdx] = useState<PortalIndex | null>(null);
@@ -49,6 +55,7 @@ export default function App() {
   const [impactYear, setImpactYear] = useState<string>("all");
   const [mapMetric, setMapMetric] = useState<string>("all");
   const [drill, setDrill] = useState<string | null>(null);
+  const [socChannels, setSocChannels] = useState<string[]>(SOC_CHANNELS.map((c) => c.v));
   const [aiOpen, setAiOpen] = useState<{ key: string; title: string } | null>(null);
   const [exporting, setExporting] = useState(false);
 
@@ -87,6 +94,8 @@ export default function App() {
   const isAll = entity === "__all__";
   const entityName = entity === "__all__" ? "Taylor & Francis Group"
     : cfg.entities.find((e) => e.id === entity)?.name ?? entity;
+  // short, friendly name for the personalised greeting (drop the "— all members" suffix)
+  const greetName = entity === "__all__" ? "Taylor & Francis" : entityName.replace(/\s*—\s*all members$/i, "");
   const kpiColors = [accent, p.series[1], p.series[2], p.series[4], p.series[5], p.series[3], p.series[6], p.series[7]];
 
   const timeline = prof ? prof.timeline : [];
@@ -94,6 +103,8 @@ export default function App() {
   const yearOpts = [{ v: "all", label: "All years" }, ...idx.meta.impactYears.map((y) => ({ v: String(y), label: String(y) }))];
   const metricLabel = MAP_METRICS.find((m) => m.key === mapMetric)?.label ?? "Mentions";
   const metricNoun = mapMetric === "all" ? "mentions" : metricLabel.toLowerCase();
+  // aggregated documents attributed to the org: publications + policy/guideline + patent citations
+  const totalDocs = prof ? prof.kpis.publications + prof.kpis.policy + prof.kpis.patents : 0;
   const drillItems = drill && prof ? prof.country_detail[mapMetric]?.[drill] ?? [] : [];
 
   // A mention cannot occur before its paper is published → an impact year earlier
@@ -153,7 +164,13 @@ export default function App() {
       <div className="context">
         <div className="greet">
           <span className="hi">Impact dashboard · viewing as <b style={{ color: accent }}>{cfg.label}</b></span>
-          <h1 className="who">{entityName}</h1>
+          <h1 className="who">Hello, {greetName}!</h1>
+          {prof && (
+            <div className="hero-docs">
+              <b>{fmtFull(totalDocs)}</b> documents attributed
+              <span className="hero-docs-sub">{fmtFull(prof.kpis.publications)} publications · {fmtFull(prof.kpis.policy)} policy &amp; guidelines · {fmtFull(prof.kpis.patents)} patents</span>
+            </div>
+          )}
         </div>
         <div className="ctrls">
           <MultiDropdown label="Publication year" values={pubYears} options={idx.meta.pubYears} onChange={setPubYears} />
@@ -232,19 +249,12 @@ export default function App() {
             </div>
 
             <div className="grid">
-              <Card title="Top countries" sub="By mention volume (excl. social media)" span={4} aiKey="countries" onAi={openAi}>
+              <Card title="Top countries" sub="By mention volume (excl. social media)" span={6} aiKey="countries" onAi={openAi}>
                 {prof.countries_ns.some((c) => c.name !== "Unknown" && c.value > 0)
                   ? <EChart option={hBar(prof.countries_ns.filter((c) => c.name !== "Unknown").slice(0, 10), p)} height={300} />
                   : <div className="card-note" style={{ paddingTop: 10 }}>No country-level data for this selection.</div>}
               </Card>
-              <Card title="Reception" sub="Sentiment of mentions" span={4} aiKey="sentiment" onAi={openAi}>
-                <EChart option={sentimentSpectrum(prof.sentiment, p, dark)} height={64} />
-                <div className="spectrum-legend"><span>◀ Critical</span><span>Neutral</span><span>Positive ▶</span></div>
-                <div style={{ marginTop: 12 }}>
-                  <RankedList items={[...prof.sentiment].reverse().filter((s) => s.value > 0).map((s) => ({ name: s.name, value: s.value }))} />
-                </div>
-              </Card>
-              <Card title="Open research" sub="Open-access status" span={4} aiKey="oa" onAi={openAi}>
+              <Card title="Open research" sub="Open-access status" span={6} aiKey="oa" onAi={openAi}>
                 {prof.kpis.publications > 0
                   ? <EChart height={300} option={donut(prof.oa_mix, p, {
                     centerValue: `${pctOA(prof.kpis)}%`, centerLabel: "open access",
@@ -255,9 +265,25 @@ export default function App() {
             </div>
 
             <div className="grid">
-              <Card title="Knowledge & policy stakeholders" sub="Organisations citing this research in policy" span={7} aiKey="stakeholders" onAi={openAi}>
-                <RankedList metric="citations"
-                  items={prof.stakeholders.slice(0, 10).filter((s) => s.name !== "Unknown").map((s) => ({ name: s.name, value: s.value }))} />
+              <Card title="Societal impact" sub="Uptake in policy, clinical guidance & patents" span={7} aiKey="societal" onAi={openAi}
+                actions={<ChannelSelect label="Channels" values={socChannels} options={SOC_CHANNELS} onChange={setSocChannels} />}>
+                <div className="soc-stats">
+                  {SOC_CHANNELS.filter((c) => socChannels.includes(c.v)).map((c) => (
+                    <div className="soc-stat" key={c.v}>
+                      <div className="soc-val">{fmt(prof.channels_ns.find((x) => x.name === c.v)?.value ?? 0)}</div>
+                      <div className="soc-lbl">{c.label}</div>
+                    </div>
+                  ))}
+                </div>
+                {socChannels.some((c) => c === "Policy" || c === "Clinical guideline")
+                  ? (prof.stakeholders.filter((s) => s.name !== "Unknown").length
+                    ? <>
+                        <div className="soc-sub">Organisations citing this research in policy</div>
+                        <RankedList metric="citations"
+                          items={prof.stakeholders.slice(0, 8).filter((s) => s.name !== "Unknown").map((s) => ({ name: s.name, value: s.value }))} />
+                      </>
+                    : <div className="card-note" style={{ paddingTop: 10 }}>No citing organisations recorded for this selection.</div>)
+                  : <div className="card-note" style={{ paddingTop: 10 }}>Patent citations don’t carry a citing organisation — select Policy or Clinical guidelines to see stakeholders.</div>}
               </Card>
               <Card title="SDG alignment" sub="UN Sustainable Development Goals" span={5} aiKey="sdg" onAi={openAi}>
                 {prof.sdg.length > 0 ? <EChart option={hBar(prof.sdg.slice(0, 8), p)} height={300} /> : pubEmpty}
@@ -270,6 +296,17 @@ export default function App() {
               </Card>
               <Card title="Top journals" sub="By mention volume" span={5} aiKey="journals" onAi={openAi}>
                 <RankedList items={prof.top_journals.slice(0, 8).map((j) => ({ name: j.name, value: j.mentions }))} />
+              </Card>
+            </div>
+
+            <div className="grid">
+              <Card title="Contributor impact"
+                sub={persona === "consortia" ? "Member institutions by research output (2026)" : "Top institutions by research output (2026)"}
+                span={12} aiKey="contributors" onAi={openAi}
+                note="Institutions credited on this entity’s 2026 research outputs (Dimensions research organisations).">
+                {prof.contributors.length
+                  ? <RankedList metric="outputs" items={prof.contributors.slice(0, 12).map((c) => ({ name: c.name, value: c.value }))} />
+                  : pubEmpty}
               </Card>
             </div>
 

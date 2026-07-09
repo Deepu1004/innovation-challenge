@@ -16,6 +16,7 @@ export interface PubCell {
   publications: number; oa_count: number; citations: number;
   sdg: NV[]; oa_mix: NV[]; pub_mix: NV[]; network: Network;
   top_journals: { name: string; mentions: number }[]; top_outputs: Output[];
+  contributors: NV[];  // top contributing institutions (by research output)
   country_detail: Record<string, Record<string, MentionItem[]>>;  // metric -> country -> items
   impact: Record<string, MenCell>;
 }
@@ -32,6 +33,7 @@ export interface Profile {
   map_metrics: Record<string, NV[]>;
   sdg: NV[]; oa_mix: NV[]; pub_mix: NV[]; network: Network;
   top_journals: { name: string; mentions: number }[]; top_outputs: Output[];
+  contributors: NV[];  // top contributing institutions (by research output)
   country_detail: Record<string, Record<string, MentionItem[]>>;  // metric -> country -> items
 }
 
@@ -139,6 +141,7 @@ export function mergeProfiles(cube: Cube, pubYears: string[], impactYear: string
     sdg: mergeNV(pubCells.map((c) => c.sdg)).sort(desc).slice(0, 10),
     oa_mix: mergeNV(pubCells.map((c) => c.oa_mix)),
     pub_mix: mergeNV(pubCells.map((c) => c.pub_mix)).sort(desc),
+    contributors: mergeNV(pubCells.map((c) => c.contributors ?? [])).sort(desc).slice(0, 12),
     network: { nodes, edges: [...edgeMap.values()].filter((e) => nset.has(e.source) && nset.has(e.target)) },
     top_journals: [...jMap].map(([name, mentions]) => ({ name, mentions })).sort((a, b) => b.mentions - a.mentions).slice(0, 8),
     top_outputs: [...oMap.values()].sort((a, b) => b.attention - a.attention).slice(0, 8),
@@ -311,6 +314,21 @@ export function sectionSummary(key: string, p: Profile, ctx: SumCtx): string {
       if (!t.length) return `No journal-level mentions for ${ctx.entityName} (${w}).`;
       return `Top journals for ${ctx.entityName} (${w}):${list3(t, " mentions")}.`;
     }
+    case "contributors": {
+      const t = topN(p.contributors);
+      if (!t.length) return `Contributor detail needs 2026 publications; none are in this selection.`;
+      return `${p.contributors.length} institutions contribute to ${ctx.entityName}'s 2026 output, led by${list3(t, " outputs")}.`;
+    }
+    case "societal": {
+      const g = (n: string) => p.channels_ns.find((x) => x.name === n)?.value ?? 0;
+      const pol = g("Policy"), pat = g("Patent"), cli = g("Clinical guideline");
+      const tot = pol + pat + cli;
+      if (!tot) return `No policy, patent or clinical-guideline uptake for ${ctx.entityName} (${w}).`;
+      const st = topN(p.stakeholders)[0];
+      let s = `${ctx.entityName}'s research shows ${fmtFull(tot)} societal-uptake signals (${w}): ${fmtFull(pol)} policy, ${fmtFull(cli)} clinical-guideline and ${fmtFull(pat)} patent citations.`;
+      if (st) s += ` Leading policy citer: ${st.name}.`;
+      return s;
+    }
     case "network": {
       if (p.network.nodes.length < 2) return `Not enough multi-country collaboration to summarise for ${ctx.entityName}.`;
       const t = [...p.network.nodes].sort((a, b) => b.value - a.value).slice(0, 3);
@@ -369,15 +387,38 @@ function hexRGB(h: string): [number, number, number] {
 // Capture the live dashboard DOM (exact layout + charts) and save it as a PDF.
 export async function exportReplicaPDF(node: HTMLElement, fileBase: string, bg: string): Promise<void> {
   const [{ toPng }, { jsPDF }] = await Promise.all([import("html-to-image"), import("jspdf")]);
-  const dataUrl = await toPng(node, {
-    pixelRatio: 2,
+
+  // Pick a pixel ratio that keeps the rasterized canvas within limits EVERY browser
+  // supports. WebKit (Safari) caps canvas area at ~16.7M px and each side at 8192;
+  // going over yields corrupted "rainbow static" output instead of an error — which
+  // is why export looked broken on some machines (Safari / weaker GPUs) and fine on
+  // others (Chrome / Firefox, far larger limits). Scale 2x down only as far as needed.
+  const baseW = node.scrollWidth || node.getBoundingClientRect().width;
+  const baseH = node.scrollHeight || node.getBoundingClientRect().height;
+  const SAFE_AREA = 16_000_000;
+  const SAFE_SIDE = 8192;
+  const pixelRatio = Math.min(
+    2,
+    SAFE_SIDE / baseW,
+    SAFE_SIDE / baseH,
+    Math.sqrt(SAFE_AREA / (baseW * baseH))
+  );
+
+  const opts = {
+    pixelRatio,
     backgroundColor: bg,
     cacheBust: true,
-    filter: (el) => {
-      const c = (el as HTMLElement).classList;
+    width: baseW,
+    height: baseH,
+    filter: (el: HTMLElement) => {
+      const c = el.classList;
       return !c || (!c.contains("export-btn") && !c.contains("modal-overlay"));
     },
-  });
+  };
+  // WebKit occasionally drops embedded fonts/images on the first serialization pass;
+  // a warm-up render makes the captured output deterministic across browsers.
+  await toPng(node, opts);
+  const dataUrl = await toPng(node, opts);
   const img = new Image();
   await new Promise<void>((res, rej) => { img.onload = () => res(); img.onerror = () => rej(new Error("img")); img.src = dataUrl; });
   const w = img.width, h = img.height;

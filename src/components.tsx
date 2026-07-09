@@ -130,6 +130,38 @@ export function MultiDropdown({ label, values, options, onChange }: Readonly<{
   );
 }
 
+// multi-select over string options (keeps at least one selected)
+export function ChannelSelect({ label, values, options, onChange }: Readonly<{
+  label: string; values: string[]; options: { v: string; label: string }[]; onChange: (v: string[]) => void;
+}>) {
+  const [open, setOpen] = useState(false);
+  const ref = useOutside(() => setOpen(false));
+  const toggle = (v: string) => {
+    const has = values.includes(v);
+    if (has && values.length === 1) return;
+    onChange(has ? values.filter((x) => x !== v) : [...values, v]);
+  };
+  const summary = values.length === options.length ? "All" : `${values.length} selected`;
+  return (
+    <div className="select-wrap" ref={ref}>
+      <button className="select-btn compact" onClick={() => setOpen((o) => !o)}>
+        <span className="lbl">{label}</span>
+        <span className="val">{summary}</span>
+        <span aria-hidden style={{ color: "var(--muted)" }}>▾</span>
+      </button>
+      {open && (
+        <div className="select-pop" style={{ width: 210 }}>
+          {options.map((o) => (
+            <button key={o.v} className={"opt" + (values.includes(o.v) ? " sel" : "")} onClick={() => toggle(o.v)}>
+              <span className="chk">{values.includes(o.v) ? "☑" : "☐"}</span><span>{o.label}</span>
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
 export function RankedList({ items, metric }: Readonly<{
   items: { name: string; sub?: string; value: number; value2?: string }[]; metric?: string;
 }>) {
